@@ -175,6 +175,9 @@ func Run() {
         registerAdminRoutes(mux, store, registry, forwarder, cfg)
         registerOAuthRoutes(mux, store, cfg)
 
+        // Backend AI operator (Cloudflare Workers AI): /agent UI + /api/agent/*.
+        rt.mountAgent(mux, seedKey)
+
         // Bridge dashboards for debugging (/glm/, /qwen/, /ds/ → their surfaces).
         for _, is := range internal {
                 is := is
