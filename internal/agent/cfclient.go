@@ -23,7 +23,7 @@ import (
 
 // defaultCFModel is the default backend-AI model: generous daily free quota
 // on Workers AI. Overridable with CF_AI_MODEL.
-const defaultCFModel = "@cf/meta/llama-3.1-8b-instruct"
+const defaultCFModel = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 // Msg is one chat message in OpenAI format.
 type Msg struct {
