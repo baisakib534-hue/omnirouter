@@ -268,6 +268,19 @@ func (f *forwarder) ForwardChat(w http.ResponseWriter, r *http.Request, body []b
 		return
 	}
 
+	// Backend-AI quota/health filter (skipped for agent self-probes).
+	isProbe := r.Header.Get("X-Agent-Probe") == "1"
+	if !isProbe && agentFilterChain != nil {
+		filtered := agentFilterChain(req.Model, chain)
+		if len(filtered) == 0 {
+			writeJSON(w, 429, formatRouterError(
+				"all candidate models are disabled or out of daily quota — see /api/agent/quota",
+				"quota_exhausted"))
+			return
+		}
+		chain = filtered
+	}
+
 	// non-stream requests get a hard upstream timeout; streams run unbounded
 	ctx := r.Context()
 	var cancel context.CancelFunc = func() {}
@@ -312,6 +325,9 @@ func (f *forwarder) ForwardChat(w http.ResponseWriter, r *http.Request, body []b
 		}
 		if tryCandidate(p, "/v1/chat/completions", func(resp *http.Response, p *Provider, up string) {
 			f.consumeAndRecord(w, resp, stream, keyName, p.ID, req.Model, up, stream, body, start, savedBytes)
+			if !isProbe && agentNoteUsage != nil {
+				agentNoteUsage(p.ID, up)
+			}
 		}) {
 			return
 		}
@@ -392,6 +408,23 @@ func (f *forwarder) ForwardMessages(w http.ResponseWriter, r *http.Request, body
 		return
 	}
 
+	// Backend-AI quota/health filter (skipped for agent self-probes).
+	isProbe := r.Header.Get("X-Agent-Probe") == "1"
+	if !isProbe && agentFilterChain != nil {
+		filtered := agentFilterChain(req.Model, chain)
+		if len(filtered) == 0 {
+			writeJSON(w, 429, map[string]interface{}{
+				"type": "error",
+				"error": map[string]interface{}{
+					"type":    "rate_limit_error",
+					"message": "all candidate models are disabled or out of daily quota — see /api/agent/quota",
+				},
+			})
+			return
+		}
+		chain = filtered
+	}
+
 	ctx := r.Context()
 	var cancel context.CancelFunc = func() {}
 	if !req.Stream {
@@ -411,6 +444,9 @@ func (f *forwarder) ForwardMessages(w http.ResponseWriter, r *http.Request, body
 			resp, err := f.openUpstream(ctx, r, p, "/v1/messages", upModel, body)
 			if err == nil && !retryable(resp.StatusCode) {
 				f.consumeMessages(w, resp, req.Stream, keyName, p.ID, req.Model, body, start, savedBytes)
+				if !isProbe && agentNoteUsage != nil {
+					agentNoteUsage(p.ID, upModel)
+				}
 				return true
 			}
 			lastStatus, lastErr = failureInfo(resp, err)
@@ -571,7 +607,14 @@ func (f *forwarder) openUpstream(ctx context.Context, r *http.Request, p *Provid
 		req.Header.Set("anthropic-version", v)
 	}
 
-	return f.client.Do(req)
+	// Backend AI: auto-discovered keyless providers ride the proxy pool.
+	client := f.client
+	if agentProxyFor != nil {
+		if pu := agentProxyFor(p.ID); pu != "" {
+			client = proxyClientFor(pu)
+		}
+	}
+	return client.Do(req)
 }
 
 // failureInfo drains a failed attempt for diagnostics and closes its body.

@@ -227,6 +227,46 @@ docker compose up -d   # http://localhost:8080
 | Gemini خطای سهمیه داد | حالت مهمان محدود است — `GEMINI_COOKIES` اضافه کن (کوکی `__Secure-1PSID` از مرورگر) |
 | داشبورد باز نمی‌شود | رمز `ADMIN_PASSWORD` را در `.env` چک کن |
 
+## 🤖 Backend AI (اپراتور هوشمند روتر)
+
+A built-in AI operator, powered by **Cloudflare Workers AI**, that manages the
+router for you: providers, combos, per-model daily quotas, model health, proxy
+pool, and automatic discovery of free keyless providers. Chat with it at
+**`/agent`** (admin login required) — e.g. *"probe qwen/qwen3.8-max"*,
+*"disable the models that failed today"*, *"create a combo cheap-first with
+qwen weight 3 and llm7 weight 1"*, *"what still has quota left?"*.
+
+Every `AGENT_CHECK_INTERVAL` (default `24h`) it probes all enabled models
+through the router; failures disable the model (and the provider if *all* its
+models fail) and a summary lands in the chat history. Daily, it probes a
+researched list of free keyless endpoints (Pollinations.ai, LLM7.io, Kilo
+Gateway) and auto-adds the ones that respond. Models with exhausted daily
+quota or disabled health are skipped in the request path automatically.
+
+### Setup
+
+```env
+CF_ACCOUNT_ID=            # Cloudflare dashboard → Workers AI → "Use REST API"
+CF_API_TOKEN=             # dash.cloudflare.com → Profile → API Tokens (Workers AI template)
+CF_AI_MODEL=@cf/meta/llama-3.1-8b-instruct   # default operator model (high daily free quota)
+AGENT_CHECK_INTERVAL=24h
+PROXY_POOL=               # optional: comma-separated http(s) proxy URLs for keyless-provider traffic
+AGENT_DEFAULT_DAILY_QUOTA=0                # default daily limit for newly added models (0 = unlimited)
+```
+
+State lives in `data/agent_state.json` (gitignored). API: `POST /api/agent/chat`
+`{"message":"..."}`, `GET /api/agent/quota`.
+
+### Render deploy notes
+
+Set the env vars above in the Render dashboard (Environment tab). Two options
+for `data/agent_state.json`:
+1. **Persistent disk (recommended):** add a disk mounted at `/opt/render/project/src/data`
+   so quotas, combos and chat history survive redeploys.
+2. **Without a disk:** the file is recreated empty on every deploy — quotas
+   reset and the agent re-discovers providers from scratch (harmless, just
+   forgetful).
+
 ## English Summary
 
 OmniRouter embeds the proven **qwen-free-api**, **glm-free-api**, **deepseek-free-api** and **gemini-free-api** bridges as libraries behind one OpenAI/Anthropic-compatible gateway: one `sk-…` key, live model catalog, cross-provider failover (`auto`), model aliasing, per-key quotas + allowlists, real token-usage analytics (streaming-aware), retry/cooldown, custom OpenAI-compatible providers, a playground and a Persian-RTL dashboard. Anthropic parity includes `/v1/messages/count_tokens`. **v1.1.1 fixes OpenAI-spec `stream` defaulting** (omitted `stream` now returns JSON, not SSE). DeepSeek's proof-of-work is solved natively by executing DeepSeek's own WASM via wazero — pure Go, zero CGO. Gemini web bridge works **guest, cookie-less** (verified live from datacenter IPs). Single static binary for Linux / Windows / macOS / Docker. **Docs site & demo: <https://godde3s.github.io/omnirouter/>** · See `.env.example` and the troubleshooting table above.
