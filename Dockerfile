@@ -12,7 +12,7 @@ WORKDIR /app
 COPY --from=builder /omnirouter /app/omnirouter
 COPY .env.example /app/.env.example
 COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+RUN chmod +x /app/start.sh && mkdir -p /app/data && chown -R router:router /app
 USER router
 ENV PORT=8080 HOST=0.0.0.0
 EXPOSE 8080
